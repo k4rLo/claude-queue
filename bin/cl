@@ -1,0 +1,147 @@
+#!/bin/bash
+
+# Determine paths
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="$(cd "$BIN_DIR/.." && pwd)"
+STORAGE_BASE="$BASE_DIR/storage"
+SCRIPT_PATH="$BIN_DIR/cl"
+
+# If sourced, activate alias
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    alias cl="$SCRIPT_PATH"
+    [[ $# -eq 0 ]] && return 0
+fi
+
+# Project identification
+PROJECT_PATH="$(pwd)"
+PROJECT_HASH=$(echo -n "$PROJECT_PATH" | md5sum | cut -d' ' -f1)
+PROJECT_STORAGE="$STORAGE_BASE/$PROJECT_HASH"
+
+# Create storage directory
+mkdir -p "$PROJECT_STORAGE"
+# Save actual path for reference
+echo "$PROJECT_PATH" > "$PROJECT_STORAGE/origin_path"
+
+# Configuration paths
+LOCAL_CONF=".cl.conf"
+CENTRAL_CONF="$PROJECT_STORAGE/.cl.conf"
+TEMPLATE_CONF="$BASE_DIR/example.cl.conf"
+
+# Load config: 1. Local in CWD, 2. Central in storage, 3. Template/Defaults
+if [ -f "$LOCAL_CONF" ]; then
+    source "$LOCAL_CONF"
+    USED_CONF="$LOCAL_CONF"
+elif [ -f "$CENTRAL_CONF" ]; then
+    source "$CENTRAL_CONF"
+    USED_CONF="$CENTRAL_CONF"
+else
+    # Default settings
+    export PATH="$HOME/.local/bin:$PATH"
+    CL_FLAGS="--chrome --permission-mode dontAsk --dangerously-skip-permissions"
+    USED_CONF="Defaults (no config found)"
+fi
+
+# Fixed file paths in storage
+LOG_FILE="$PROJECT_STORAGE/claude.log"
+QUEUE_FILE="$PROJECT_STORAGE/.claude_queue"
+LOCK_FILE="$PROJECT_STORAGE/.cl.lock"
+
+show_status() {
+    echo "--- Claude Queue Status (Centralized) ---"
+    echo "Project: $PROJECT_PATH"
+    echo "Storage: $PROJECT_STORAGE"
+    
+    if [ -f "$LOCK_FILE" ] && flock -n "$LOCK_FILE" true 2>/dev/null; then
+        echo "Worker:  IDLE"
+    else
+        echo "Worker:  RUNNING"
+    fi
+    
+    if [ -s "$QUEUE_FILE" ]; then
+        echo "Queue:   $(wc -l < "$QUEUE_FILE") tasks pending"
+    else
+        echo "Queue:   EMPTY"
+    fi
+    echo "----------------------------------------"
+}
+
+show_help() {
+    echo "Usage: cl [PROMPT | -i | -s | -p | -c | -h | --help]"
+    echo ""
+    echo "Options:"
+    echo "  (no args)     View live logs for current project."
+    echo "  PROMPT        Add task to queue for current project."
+    echo "  -i            Interactive mode (waits for queue)."
+    echo "  -s            Show status of current project."
+    echo "  -p, --path    Show path to storage and log file."
+    echo "  -c, --config  Setup alias and initialize central config."
+    echo "  -h, --help    Show help message."
+}
+
+# 1. No arguments: View Logs
+if [ $# -eq 0 ]; then
+    if [ -f "$LOG_FILE" ]; then
+        less +G +F "$LOG_FILE"
+    else
+        echo "No logs yet for this project."
+    fi
+    exit 0
+fi
+
+# 2. Help
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    show_help
+    exit 0
+fi
+
+# 3. Status
+if [[ "$1" == "-s" ]]; then
+    show_status
+    exit 0
+fi
+
+# 4. Show Path
+if [[ "$1" == "-p" || "$1" == "--path" ]]; then
+    echo "Project: $PROJECT_PATH"
+    echo "Storage: $PROJECT_STORAGE"
+    echo "Log file: $LOG_FILE"
+    exit 0
+fi
+
+# 5. Config (Setup)
+if [[ "$1" == "-c" || "$1" == "--config" ]]; then
+    # Create central config if missing
+    if [ ! -f "$CENTRAL_CONF" ]; then
+        if [ -f "$TEMPLATE_CONF" ]; then
+            cp "$TEMPLATE_CONF" "$CENTRAL_CONF"
+            echo "Created central config: $CENTRAL_CONF"
+        fi
+    fi
+    
+    # Setup alias
+    BASHRC="$HOME/.bashrc"
+    ALIAS_LINE="alias cl='$SCRIPT_PATH'"
+    if ! grep -q "alias cl=" "$BASHRC"; then
+        echo -e "\n# Claude Queue Alias\n$ALIAS_LINE" >> "$BASHRC"
+        echo "Alias added to .bashrc"
+    fi
+    alias cl="$SCRIPT_PATH"
+    echo "Alias 'cl' is now active."
+    [[ "${BASH_SOURCE[0]}" != "${0}" ]] && return 0 || exit 0
+fi
+
+# 6. Interactive
+if [[ "$1" == "-i" ]]; then
+    echo "Waiting for queue..."
+    exec 9>"$LOCK_FILE"
+    flock 9
+    eval "claude $CL_FLAGS"
+    exit 0
+fi
+
+# 7. Add to Queue
+echo "$*" >> "$QUEUE_FILE"
+echo "Task added to queue (Storage: $PROJECT_HASH)."
+
+# Trigger worker with storage path
+"$BIN_DIR/worker.sh" "$PROJECT_STORAGE" > /dev/null 2>&1 & disown

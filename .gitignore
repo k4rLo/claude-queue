@@ -1,0 +1,7 @@
+.idea/
+storage/
+.cl.conf
+.claude_queue
+.claude_queue.tmp
+claude.log
+.cl.lock
