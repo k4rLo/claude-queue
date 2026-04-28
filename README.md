@@ -4,6 +4,16 @@ A lightweight, centralized queue system for Claude CLI that allows sequential ex
 
 ## English Version
 
+### Install
+After cloning the repository, run the following command to set up the alias and initial configuration:
+```bash
+source ./bin/cl -c
+```
+This will:
+1. Create the `storage/` directory.
+2. Add the `cl` alias to your `~/.bashrc`.
+3. Activate the alias in your current terminal session.
+
 ### Features
 - **Background Execution:** Prompts are added to a queue and executed one by one.
 - **Clean Projects:** No logs, queues, or lock files are created in your working directories.
@@ -29,6 +39,16 @@ You can customize Claude's flags in the `example.cl.conf` (global template) or i
 ---
 
 ## Česká verze
+
+### Instalace
+Po naklonování repozitáře spusťte následující příkaz pro nastavení aliasu a počáteční konfigurace:
+```bash
+source ./bin/cl -c
+```
+Tento příkaz:
+1. Vytvoří adresář `storage/`.
+2. Přidá alias `cl` do vašeho `~/.bashrc`.
+3. Aktivuje alias v aktuální relaci terminálu.
 
 ### Funkce
 - **Spouštění na pozadí:** Prompty jsou přidávány do fronty a vykonávány jeden po druhém.
